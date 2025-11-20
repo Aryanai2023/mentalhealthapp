@@ -1,0 +1,31 @@
+{
+  "name": "mental-health-companion",
+  "version": "1.0.0",
+  "description": "A comprehensive mental health and wellness tracking application",
+  "main": "mental-health-app.jsx",
+  "scripts": {
+    "start": "npx http-server -p 8000 -o complete-app.html",
+    "serve": "python -m http.server 8000"
+  },
+  "keywords": [
+    "mental-health",
+    "wellness",
+    "gratitude",
+    "mood-tracker",
+    "meditation",
+    "mindfulness",
+    "self-care",
+    "journal",
+    "habits",
+    "goals"
+  ],
+  "author": "Mental Health Companion Team",
+  "license": "MIT",
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}
