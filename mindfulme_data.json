@@ -1,0 +1,23 @@
+{
+  "journal_entries": [],
+  "gratitude_jar": [
+    {
+      "note": "beautiful nature",
+      "category": "\ud83c\udf05 Nature",
+      "date": "2025-11-21",
+      "timestamp": "2025-11-21 23:26:25"
+    },
+    {
+      "note": "my health is great",
+      "category": "\ud83d\udcaa Health",
+      "date": "2025-11-21",
+      "timestamp": "2025-11-21 23:26:49"
+    },
+    {
+      "note": "my health is great",
+      "category": "\ud83d\udcaa Health",
+      "date": "2025-11-21",
+      "timestamp": "2025-11-21 23:26:59"
+    }
+  ]
+}
