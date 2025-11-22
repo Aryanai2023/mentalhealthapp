@@ -2,6 +2,7 @@ import json
 from datetime import datetime, date, timedelta
 from pathlib import Path
 from collections import Counter
+import random
 
 import pandas as pd
 import streamlit as st
@@ -12,7 +13,7 @@ st.set_page_config(
     page_title="MindfulMe - Your Wellness Companion",
     page_icon="🌸",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
 # ---------------------- Constants ---------------------- #
@@ -73,6 +74,19 @@ DAILY_CHALLENGES = [
     "Declutter one small area: a drawer, your desk, or your desktop.",
     "Go outside and notice the sky for 30 seconds.",
     "Smile at yourself in the mirror once today.",
+]
+
+JOURNAL_PROMPTS = [
+    "Something small that made today a little better:",
+    "A person who made your life easier this week (and how):",
+    "One thing your body allowed you to do today:",
+    "A challenge you handled better than you would have a year ago:",
+    "A comfort you often take for granted (home, food, internet, etc.):",
+    "Something in nature you noticed or appreciated recently:",
+    "A skill or quality in yourself that you're grateful for:",
+    "One thing that went ‘okay’ today, even if it wasn't perfect:",
+    "A mistake that taught you something useful:",
+    "One thing you’re looking forward to in the next few days:",
 ]
 
 # CBT / psychology content
@@ -193,6 +207,7 @@ if "custom_jar_categories" not in st.session_state:
 
 # ---------------------- Persistence Helpers ---------------------- #
 
+
 def save_data() -> None:
     """Save all app data to a JSON file."""
     data = {
@@ -231,6 +246,7 @@ def load_data() -> None:
 load_data()
 
 # ---------------------- Helper Functions ---------------------- #
+
 
 def get_unique_practice_days() -> int:
     """Number of unique days with journal entries."""
@@ -331,6 +347,18 @@ def get_weekly_summary():
         "avg_face": avg_face,
         "top_tag": top_tag,
     }
+
+
+def get_prompts_for_date(d: date, n: int = 3):
+    """Return n stable prompts for the given date (so they don't change on every rerun)."""
+    if not JOURNAL_PROMPTS:
+        return []
+    seed = d.toordinal()
+    rnd = random.Random(seed)
+    prompts = JOURNAL_PROMPTS.copy()
+    rnd.shuffle(prompts)
+    return prompts[:n]
+
 
 # ---------------------- Sidebar ---------------------- #
 
@@ -549,6 +577,12 @@ elif page == "📔 Gratitude Journal":
                 help="From left (low) to right (great) 😊",
             )
 
+        # Gentle journal prompts based on date
+        prompts = get_prompts_for_date(entry_date)
+        with st.expander("💡 Need ideas? Try one of these prompts"):
+            for p in prompts:
+                st.markdown(f"- {p}")
+
         st.markdown("#### What are you grateful for today?")
         gratitude_1 = st.text_area(
             "First thing I'm grateful for:",
@@ -666,10 +700,13 @@ elif page == "📔 Gratitude Journal":
             )
 
             if not sorted_entries:
-                st.info("No entries match your filters yet. Try widening the range or clearing search.")
+                st.info(
+                    "No entries match your filters yet. Try widening the range or clearing search."
+                )
             else:
-                for entry in sorted_entries:
+                for i, entry in enumerate(sorted_entries):
                     is_fav = entry.get("favorite", False)
+                    entry_key = entry.get("timestamp", f"{entry['date']}_{i}")
 
                     st.markdown(
                         f"""
@@ -686,20 +723,99 @@ elif page == "📔 Gratitude Journal":
                         tags_str = ", ".join(entry["tags"])
                         st.markdown(f"**Tags:** {tags_str}")
 
-                    for i, gratitude in enumerate(entry["gratitudes"], 1):
-                        st.markdown(f"**{i}.** {gratitude}")
+                    for j, gratitude in enumerate(entry["gratitudes"], 1):
+                        st.markdown(f"**{j}.** {gratitude}")
 
                     if entry.get("reflection"):
                         st.markdown(f"*Reflection: {entry['reflection']}*")
 
-                    fav_label = "★ Unfavourite" if is_fav else "⭐ Mark as favourite"
-                    if st.button(
-                        fav_label,
-                        key=f"fav_{entry.get('timestamp','')}_{entry['date']}",
-                    ):
-                        entry["favorite"] = not is_fav
-                        save_data()
-                        st.experimental_rerun()
+                    col_b1, col_b2, col_b3 = st.columns(3)
+                    with col_b1:
+                        fav_label = "★ Unfavourite" if is_fav else "⭐ Mark as favourite"
+                        if st.button(fav_label, key=f"fav_{entry_key}"):
+                            entry["favorite"] = not is_fav
+                            save_data()
+                            st.experimental_rerun()
+
+                    with col_b2:
+                        if st.button("✏️ Edit", key=f"edit_{entry_key}"):
+                            st.session_state[f"edit_mode_{entry_key}"] = not st.session_state.get(
+                                f"edit_mode_{entry_key}", False
+                            )
+
+                    with col_b3:
+                        if st.button("🗑️ Delete", key=f"delete_{entry_key}"):
+                            st.session_state.journal_entries.remove(entry)
+                            save_data()
+                            st.warning("Entry deleted.")
+                            st.experimental_rerun()
+
+                    # Inline editor for this entry
+                    if st.session_state.get(f"edit_mode_{entry_key}", False):
+                        with st.expander("Edit this entry", expanded=True):
+                            edit_date = st.date_input(
+                                "Date",
+                                datetime.strptime(entry["date"], "%Y-%m-%d").date(),
+                                key=f"edit_date_{entry_key}",
+                            )
+                            edit_mood = st.select_slider(
+                                "Mood",
+                                options=MOOD_OPTIONS,
+                                value=entry.get("mood", "🙂"),
+                                key=f"edit_mood_{entry_key}",
+                            )
+
+                            existing_grats = entry.get("gratitudes", [])
+                            edit_g1 = st.text_area(
+                                "First thing I'm grateful for:",
+                                value=existing_grats[0] if len(existing_grats) > 0 else "",
+                                height=80,
+                                key=f"edit_g1_{entry_key}",
+                            )
+                            edit_g2 = st.text_area(
+                                "Second thing I'm grateful for:",
+                                value=existing_grats[1] if len(existing_grats) > 1 else "",
+                                height=80,
+                                key=f"edit_g2_{entry_key}",
+                            )
+                            edit_g3 = st.text_area(
+                                "Third thing I'm grateful for:",
+                                value=existing_grats[2] if len(existing_grats) > 2 else "",
+                                height=80,
+                                key=f"edit_g3_{entry_key}",
+                            )
+
+                            edit_intention = st.text_input(
+                                "Daily intention (optional)",
+                                value=entry.get("intention", ""),
+                                key=f"edit_intention_{entry_key}",
+                            )
+                            edit_tags = st.multiselect(
+                                "Tags",
+                                JOURNAL_TAGS,
+                                default=entry.get("tags", []),
+                                key=f"edit_tags_{entry_key}",
+                            )
+                            edit_reflection = st.text_area(
+                                "Reflection (optional)",
+                                value=entry.get("reflection", ""),
+                                height=80,
+                                key=f"edit_reflection_{entry_key}",
+                            )
+
+                            if st.button("💾 Save changes", key=f"save_edit_{entry_key}"):
+                                entry["date"] = edit_date.strftime("%Y-%m-%d")
+                                entry["mood"] = edit_mood
+                                entry["gratitudes"] = [
+                                    g.strip() for g in [edit_g1, edit_g2, edit_g3] if g.strip()
+                                ]
+                                entry["intention"] = edit_intention
+                                entry["tags"] = edit_tags
+                                entry["reflection"] = edit_reflection
+                                save_data()
+                                st.session_state[f"edit_mode_{entry_key}"] = False
+                                st.success("Entry updated.")
+                                st.experimental_rerun()
 
                     st.markdown("</div>", unsafe_allow_html=True)
         else:
@@ -729,7 +845,10 @@ elif page == "🏺 Gratitude Jar":
             )
             if st.button("Add Category", key="add_jar_category"):
                 if new_cat.strip():
-                    if new_cat not in st.session_state.custom_jar_categories and new_cat not in GRATITUDE_CATEGORIES:
+                    if (
+                        new_cat not in st.session_state.custom_jar_categories
+                        and new_cat not in GRATITUDE_CATEGORIES
+                    ):
                         st.session_state.custom_jar_categories.append(new_cat.strip())
                         save_data()
                         st.success("✅ Category added!")
@@ -761,8 +880,6 @@ elif page == "🏺 Gratitude Jar":
         st.markdown("*Need a pick-me-up? Draw a random note!*")
 
         if st.button("🎁 Pick a Random Note") and st.session_state.gratitude_jar:
-            import random
-
             random_note = random.choice(st.session_state.gratitude_jar)
             st.markdown(
                 f"""
@@ -781,18 +898,25 @@ elif page == "🏺 Gratitude Jar":
     st.markdown("### 🏺 Your Gratitude Collection")
 
     if st.session_state.gratitude_jar:
-        categories = ["All"] + sorted({note["category"] for note in st.session_state.gratitude_jar})
+        categories = ["All"] + sorted(
+            {note["category"] for note in st.session_state.gratitude_jar}
+        )
         selected_category = st.selectbox("Filter by category:", categories)
 
         filtered_notes = (
             st.session_state.gratitude_jar
             if selected_category == "All"
-            else [note for note in st.session_state.gratitude_jar if note["category"] == selected_category]
+            else [
+                note
+                for note in st.session_state.gratitude_jar
+                if note["category"] == selected_category
+            ]
         )
 
         sorted_notes = sorted(filtered_notes, key=lambda x: x["timestamp"], reverse=True)
 
-        for note in sorted_notes:
+        for i, note in enumerate(sorted_notes):
+            note_key = note.get("timestamp", f"{note['date']}_{i}")
             st.markdown(
                 f"""
                 <div class="jar-item">
@@ -802,6 +926,13 @@ elif page == "🏺 Gratitude Jar":
                 """,
                 unsafe_allow_html=True,
             )
+            cols_note = st.columns([0.8, 0.2])
+            with cols_note[1]:
+                if st.button("🗑️ Delete", key=f"delete_jar_{note_key}"):
+                    st.session_state.gratitude_jar.remove(note)
+                    save_data()
+                    st.warning("Note removed from jar.")
+                    st.experimental_rerun()
     else:
         st.info("Your gratitude jar is empty. Start adding moments you want to remember!")
 
@@ -818,13 +949,13 @@ elif page == "✨ Self Affirmations":
         col1, col2 = st.columns([2, 1])
 
         with col1:
-            import random
-
             if (
                 st.button("🔄 Get New Affirmation", use_container_width=True)
                 or st.session_state.current_affirmation is None
             ):
-                st.session_state.current_affirmation = random.choice(st.session_state.affirmations)
+                st.session_state.current_affirmation = random.choice(
+                    st.session_state.affirmations
+                )
 
             st.markdown(
                 f"""
@@ -876,7 +1007,9 @@ elif page == "✨ Self Affirmations":
 
         base_list = st.session_state.affirmations
         if mode == "Only my custom ones":
-            base_list = [a for a in st.session_state.affirmations if a not in DEFAULT_AFFIRMATIONS]
+            base_list = [
+                a for a in st.session_state.affirmations if a not in DEFAULT_AFFIRMATIONS
+            ]
 
         if not base_list:
             st.info("No custom affirmations yet. Add one in the previous tab!")
@@ -900,7 +1033,11 @@ elif page == "📊 My Progress":
     st.title("📊 My Progress")
     st.markdown("*Track your wellness journey*")
 
-    if st.session_state.journal_entries or st.session_state.gratitude_jar or st.session_state.thought_records:
+    if (
+        st.session_state.journal_entries
+        or st.session_state.gratitude_jar
+        or st.session_state.thought_records
+    ):
         unique_days = get_unique_practice_days()
         avg_mood, mood_face = get_average_mood()
         longest_streak = get_longest_streak()
@@ -911,7 +1048,9 @@ elif page == "📊 My Progress":
             st.metric(
                 "Total Journal Entries",
                 len(st.session_state.journal_entries),
-                delta="Keep it up!" if len(st.session_state.journal_entries) > 0 else None,
+                delta="Keep it up!"
+                if len(st.session_state.journal_entries) > 0
+                else None,
             )
 
         with col2:
@@ -970,7 +1109,9 @@ elif page == "📊 My Progress":
                 st.markdown("#### Entries Over Time")
                 dates, counts = get_daily_entry_counts()
                 if dates:
-                    timeline_df = pd.DataFrame({"date": dates, "entries": counts}).set_index("date")
+                    timeline_df = pd.DataFrame(
+                        {"date": dates, "entries": counts}
+                    ).set_index("date")
                     st.line_chart(timeline_df)
                 else:
                     st.info("Add some journal entries to see your journey over time.")
@@ -996,7 +1137,9 @@ elif page == "📊 My Progress":
             st.markdown("### 🏷️ Themes You Write About Most")
             tag_counts = Counter(all_tags)
             tag_df = (
-                pd.DataFrame({"Tag": list(tag_counts.keys()), "Entries": list(tag_counts.values())})
+                pd.DataFrame(
+                    {"Tag": list(tag_counts.keys()), "Entries": list(tag_counts.values())}
+                )
                 .sort_values("Entries", ascending=False)
                 .set_index("Tag")
             )
@@ -1054,7 +1197,10 @@ elif page == "📊 My Progress":
                 st.markdown("#### Thinking Patterns You’ve Logged")
                 trap_df = (
                     pd.DataFrame(
-                        {"Thinking pattern": list(trap_counts.keys()), "Count": list(trap_counts.values())}
+                        {
+                            "Thinking pattern": list(trap_counts.keys()),
+                            "Count": list(trap_counts.values()),
+                        }
                     )
                     .sort_values("Count", ascending=False)
                     .set_index("Thinking pattern")
@@ -1147,7 +1293,6 @@ elif page == "📊 My Progress":
                     except Exception:
                         pass
                 st.success("All data cleared. Fresh start! 🌱")
-
     else:
         st.info("Start your wellness journey to see your progress here!")
         st.markdown(
@@ -1214,6 +1359,17 @@ elif page == "🧠 Psychology Tools":
             help="Many uncomfortable thoughts follow repeated patterns.",
         )
 
+        if thinking_traps_selected:
+            st.markdown("#### 🔍 Gentle questions for these patterns")
+            for trap in thinking_traps_selected:
+                info = THINKING_TRAPS.get(trap)
+                if info:
+                    st.markdown(f"**{trap}** – {info['description']}")
+                    st.markdown(
+                        "- What is one fact that doesn't fully match this thought?\n"
+                        "- If a friend had this thought, what would I want them to remember?"
+                    )
+
         col3, col4 = st.columns(2)
         with col3:
             evidence_for = st.text_area(
@@ -1270,7 +1426,11 @@ elif page == "🧠 Psychology Tools":
             emotion_filter = st.multiselect(
                 "Filter by emotion (optional)",
                 options=sorted(
-                    {r.get("emotion") for r in st.session_state.thought_records if r.get("emotion")}
+                    {
+                        r.get("emotion")
+                        for r in st.session_state.thought_records
+                        if r.get("emotion")
+                    }
                 ),
                 default=None,
             )
@@ -1334,8 +1494,8 @@ elif page == "🧘 Calm Corner":
     st.title("🧘 Calm Corner")
     st.markdown("*Quick tools to relax your body and calm your mind*")
 
-    breath_tab, ground_tab, break_tab = st.tabs(
-        ["🌬️ Breathing Exercises", "🌍 Grounding Exercise", "⏲️ Micro Break"]
+    breath_tab, ground_tab, break_tab, compassion_tab = st.tabs(
+        ["🌬️ Breathing Exercises", "🌍 Grounding Exercise", "⏲️ Micro Break", "💗 Self-Compassion"]
     )
 
     with breath_tab:
@@ -1359,7 +1519,9 @@ elif page == "🧘 Calm Corner":
             for _ in range(cycles):
                 for phase, seconds in [("Inhale", 4), ("Hold", 4), ("Exhale", 4), ("Hold", 4)]:
                     for s in range(seconds, 0, -1):
-                        placeholder.markdown(f"### **{phase}**\n\nRemaining: **{s}** seconds")
+                        placeholder.markdown(
+                            f"### **{phase}**\n\nRemaining: **{s}** seconds"
+                        )
                         time.sleep(1)
             placeholder.markdown("### ✅ Done! Notice how your body feels now.")
 
@@ -1424,7 +1586,60 @@ elif page == "🧘 Calm Corner":
                 secs = remaining % 60
                 placeholder.markdown(f"### ⏳ Time left: **{mins:02d}:{secs:02d}**")
                 time.sleep(1)
-            placeholder.markdown("### ✅ Break complete. Check in: how do you feel right now?")
+            placeholder.markdown(
+                "### ✅ Break complete. Check in: how do you feel right now?"
+            )
+
+    with compassion_tab:
+        st.markdown("### 💗 Self-Compassion Break")
+        st.markdown(
+            """
+        This exercise is about talking to yourself the way you might talk to a close friend.
+
+        1. **Notice** – Name what feels difficult right now.  
+        2. **Normalise** – Remember that many humans feel this way sometimes.  
+        3. **Be kind** – Offer yourself one short, kind sentence.
+        """
+        )
+
+        sc_situation = st.text_area(
+            "What is difficult right now?",
+            placeholder="Write a sentence or two about what feels hard (or leave blank and just read).",
+            height=80,
+        )
+        sc_feeling = st.text_input(
+            "Main feeling (e.g. shame, fear, sadness):",
+            placeholder="e.g. Sadness",
+        )
+        sc_sentence = st.text_input(
+            "One kind sentence to yourself:",
+            placeholder="e.g. It's understandable I feel this way; I'm doing the best I can right now.",
+        )
+
+        if st.button("💾 Save this self-compassion note"):
+            if sc_situation.strip() or sc_sentence.strip():
+                # Store as a gentle variant of a thought record
+                st.session_state.thought_records.append(
+                    {
+                        "date": get_today_string(),
+                        "emotion": sc_feeling or "Self-compassion",
+                        "intensity_before": None,
+                        "intensity_after": None,
+                        "situation": sc_situation,
+                        "automatic_thoughts": "",
+                        "thinking_traps": [],
+                        "evidence_for": "",
+                        "evidence_against": "",
+                        "balanced_response": sc_sentence,
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    }
+                )
+                save_data()
+                st.success(
+                    "Saved. You can revisit this in your Thought Records or Progress."
+                )
+            else:
+                st.info("You can also just read the prompts without saving anything.")
 
 # Footer
 st.markdown("---")
